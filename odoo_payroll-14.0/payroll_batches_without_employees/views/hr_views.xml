@@ -8,8 +8,6 @@
         <field name="arch" type="xml">
             <xpath expr="//field[@name='employee_ids']/parent::group" position="before">
                 <button string="Limpiar lista de empleados" name="clean_employees" type="object" class="oe_highlight"/>
-                <field name="categorys_ids" string="Etiqueta" label="Etiqueta" class="oe_right"/>
-                <button string="Filtrar lista de empleados por:" name="filter_employees" type="object" class="oe_highlight oe_right"/>
             </xpath>
         </field>
     </record>

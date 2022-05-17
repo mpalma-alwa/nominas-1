@@ -7,7 +7,14 @@ class HrPayslip(models.Model):
     _inherit = 'hr.payslip'
 
     def _prepare_adjust_line(self, line_ids, adjust_type, debit_sum, credit_sum, date):
-        acc_id = self.journal_id.default_account_id.id
+        if self.journal_id.type == 'general':
+            if (0.0 if adjust_type == 'credit' else credit_sum - debit_sum) > 0:
+                acc_id = self.journal_id.default_debit_account_id.id
+            else:
+                acc_id = self.journal_id.default_credit_account_id.id
+        else:
+            acc_id = self.journal_id.default_account_id.id
+
         if not acc_id:
             raise UserError(_('The Expense Journal "%s" has not properly configured the default Account!') % (self.journal_id.name))
         existing_adjustment_line = (
@@ -71,7 +78,6 @@ class HrPayslip(models.Model):
                     }
                     slip_lines = slip._prepare_slip_lines(date, line_ids)
                     line_ids.extend(slip_lines)
-                    line_ids[0]['debit'] = line_ids[0]['debit'] + 2.0
                     for line_id in line_ids:  # Get the debit and credit sum and partner_id.
                         line_id['partner_id'] = slip.employee_id.address_home_id.id
                         debit_sum += line_id['debit']

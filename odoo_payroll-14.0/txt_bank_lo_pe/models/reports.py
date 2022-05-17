@@ -21,6 +21,8 @@ class BankReportTxt(object):
             return '{} - BCP.txt'.format(filename)
         elif self.code == '03':
             return '{} - Interbank.txt'.format(filename)
+        elif self.code == '11':
+            return '{} - BBVA.txt'.format(filename)
         else:
             return '{}.txt'.format(filename)
 

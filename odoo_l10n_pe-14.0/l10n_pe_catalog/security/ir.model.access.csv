@@ -18,3 +18,5 @@ access_transfer_type_codes_account_manager,transfer_type_codes,model_transfer_ty
 access_charge_discount_codes_all_users,charge.discount.codes,model_charge_discount_codes,,1,0,0,0
 access_charge_discount_codes_account_user,charge.discount.codes,model_charge_discount_codes,account.group_account_user,1,1,1,1
 access_charge_discount_codes_account_manager,charge.discount.codes,model_charge_discount_codes,account.group_account_manager,1,1,1,1
+
+access_classification_services_invoice,classification.services,model_classification_services,,1,1,1,1

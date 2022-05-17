@@ -40,6 +40,18 @@ class HrMassivePayment(models.Model):
         string='Nómina',
         required=True
     )
+
+    is_bbva = fields.Boolean(compute='_get_bbva')
+    type_process = fields.Selection([('A', 'Inmediato'),
+                                     ('F', 'Fecha futura'),
+                                     ('H', 'Horario de ejecución')],
+                                    default='A', string='Tipo de proceso')
+    future_date = fields.Date(string='Fecha futura')
+    run_time = fields.Selection([('B', '11:00 Horas'),
+                                 ('C', '15:00 Horas'),
+                                 ('D', '19:00 Horas')],
+                                default='B', string='Horario de ejecución')
+
     txt_filename = fields.Char(string='Nombre Archivo generado')
     txt_binary = fields.Binary(string='Archivo')
     txt_filename2 = fields.Char(string='Nombre Archivo generado 2')
@@ -61,6 +73,9 @@ class HrMassivePayment(models.Model):
             code = '09'
             data = self.generate_scotiabank_file(data)
             data['extra_file'] = True
+        elif parent_bank_id and parent_bank_id.sunat_bank_code == '11':
+            code = '11'
+            data = self.generate_bbva_file(data)
         else:
             code = 'EE'
 
@@ -361,7 +376,7 @@ class HrMassivePayment(models.Model):
                 row2_val10 += sum(line.total for line in payslip.line_ids.filtered(
                     lambda x: x.category_id == self.env.ref('hr_payroll.NET', False)))
                 if self.acc_type == 'cts':
-                    row2_val13 += sum(line.total for line in payslip.line_ids.filtered(lambda x: x.code == 'TRE_001'))
+                    row2_val13 += sum(line.total for line in payslip.line_ids.filtered(lambda x: x.code == 'BASIC'))
             row1_val8 += row2_val10
             if row2_val8 == '1':
                 row2_val10 /= self.exchange_type
@@ -392,7 +407,7 @@ class HrMassivePayment(models.Model):
         row1_val1 = str(len(data_lines))[:6].zfill(6)
         row1_val2 = payment_date
         row1_val3 = 'X'
-        row1_val4 = self.payment_type_id.type_bank_code
+        row1_val4 = 'C'
         row1_val5 = '1' if self.payment_type_id and self.payment_type_id.currency_id and self.payment_type_id.currency_id.name == 'USD' else '0'
         row1_val6 = '001'
         row1_val7 = company_account.replace('-', '').ljust(20, ' ') if company_account else ' ' * 20
@@ -418,13 +433,23 @@ class HrMassivePayment(models.Model):
         employees_ids = self.payslip_ids.mapped('employee_id')
         i = 1
         net = 0
-
+        row2_val2 = ''
         employees_no_accounts = []
         for employee in employees_ids:
             employee_payslips = self.payslip_ids.filtered(lambda x: x.employee_id == employee)
             # row 2
             row2_val1 = '02'
-            row2_val2 = self.complete_str_data(str(i).zfill(2), 49, 'right')
+
+            if employee.type_identification_id.l10n_pe_vat_code == '1':
+                row2_val2 = '{}{}{}'.format(0, 1, employee.identification_id)
+
+            if employee.type_identification_id.l10n_pe_vat_code == '4':
+                row2_val2 = '{}{}{}'.format(0, 3, employee.identification_id)
+
+            if employee.type_identification_id.l10n_pe_vat_code == '7':
+                row2_val2 = '{}{}{}'.format(0, 5, employee.identification_id)
+
+            row2_val2 = self.complete_str_data(row2_val2.zfill(10), 49, 'right')
 
             if self.is_validate_account:
                 bank_account_id = self.get_partner_bank_by_code(employee, '03', '=', self.acc_type)
@@ -476,10 +501,10 @@ class HrMassivePayment(models.Model):
             row2_val10 = 'P'
             row2_val11 = row2_val8
             row2_val12 = self.complete_str_data(employee.identification_id, 15, 'right')
-            firstname = self.complete_str_data(employee.firstname, 22, 'right')
+            firstname = self.complete_str_data(employee.firstname, 20, 'right')
             lastname = self.complete_str_data(employee.lastname, 20, 'right')
             secondname = self.complete_str_data(employee.secondname, 20, 'right')
-            row2_val13 = '{}{}{}'.format(firstname, lastname, secondname)
+            row2_val13 = '{}{}{}'.format(lastname, secondname, firstname)
             if self.acc_type == 'wage':
                 row2_val14 = '0' * 15
                 row2 = row2_val1 + row2_val2 + row2_val3 + row2_val4 + row2_val5 + row2_val6 + row2_val7 + row2_val8 + row2_val9 + row2_val10 + row2_val11 + \
@@ -528,6 +553,229 @@ class HrMassivePayment(models.Model):
             total_abonos += self.get_clean_account(account, type_account)
         total_control = total_cargo + total_abonos
         return str(total_control).zfill(15)
+
+    def get_data_bbva_wage(self, data):
+        company_account = self.payment_type_id.acc_number
+        payslip = self.payslip_ids
+
+        year, month, day = self.payment_date.strftime('%Y/%m/%d').split('/')
+        if self.future_date and self.type_process == 'F':
+            year, month, day = self.future_date.strftime('%Y/%m/%d').split('/')
+        elif not self.future_date and not self.payment_date:
+            year = '    '
+            month = '  '
+            day = '  '
+
+        data_line = []
+        total_neto = 0.00
+        employees_id = []
+        employees_no_accounts = []
+        type_bank_id = ''
+        acc_number = ''
+        div_total = self.exchange_type if self.exchange_type > 0 else 1
+
+        for rec in payslip:
+            employees_id.append(rec.employee_id)
+            total_neto += rec.net_other
+
+        row1_part1 = self.complete_str_data(company_account, 20, 'right')
+        if self.exchange_type > 0:
+            row1_part2 = 'USD'
+        else:
+            row1_part2 = 'PEN'
+        row1_part3 = self.struct_zero_number((total_neto / div_total), 13).replace('.', '')
+        row1_part4 = self.type_process
+        row1_part5 = '%s%s%s' % (year, month, day)
+        row1_part6 = self.run_time if self.type_process == 'H' else ' '
+        row1_part7 = self.complete_str_data('Abono Nomina', 25, 'right')
+        row1_part8 = str(len(set(employees_id))).zfill(6)
+        row1_part9 = '000000000000000000'
+        row1_part10 = self.complete_str_data(' ', 50, 'rigth')
+        row1 = row1_part1 + row1_part2 + row1_part3 + row1_part4 + row1_part5 + row1_part6 + row1_part7 + \
+               row1_part8 + 'N' + row1_part9 + row1_part10
+        data['row1'] = '700' + row1
+
+        for id_emplo in list(set(employees_id)):
+            total_neto_employe = 0.00
+            paylip_employee = self.payslip_ids.filtered(lambda x: x.employee_id == id_emplo)
+            employee = paylip_employee[0].employee_id
+            type_document_employee = employee.type_identification_id
+
+            if type_document_employee.l10n_pe_vat_code == '6':
+                type_document = 'R'
+            elif type_document_employee.l10n_pe_vat_code == '1':
+                type_document = 'L'
+            elif type_document_employee.name == 'LE':
+                type_document = 'L'
+            elif type_document_employee.l10n_pe_vat_code == '4':
+                type_document = 'E'
+            elif type_document_employee.l10n_pe_vat_code == '7':
+                type_document = 'P'
+            else:
+                type_document = ' '
+
+            bank_account_id = self.get_bank_id_bbva(employee, self.acc_type)
+            code_03 = bank_account_id.filtered(lambda x: x.bank_id.sunat_bank_code == '11')
+            if code_03:
+                type_bank_id = 'P'
+            else:
+                type_bank_id = 'I'
+
+            acc_number = False
+            if bank_account_id and type_bank_id == 'P':
+                acc_number = bank_account_id.acc_number
+            else:
+                acc_number = bank_account_id.cci
+
+            if not acc_number:
+                employees_no_accounts.append('  - ' + employee.name)
+                continue
+
+            name_complete_employee = employee.firstname + ' ' + employee.lastname + ' ' + employee.secondname
+
+            for rec in paylip_employee:
+                total_neto_employe += rec.net_other
+
+            row2_part1 = type_document
+            row2_part2 = self.complete_str_data(employee.identification_id, 12, 'right')
+            row2_part3 = type_bank_id
+            row2_part4 = self.complete_str_data(acc_number,20,'right')
+            row2_part5 = self.complete_str_data(name_complete_employee,40,'right')
+            row2_part6 = self.struct_zero_number((total_neto_employe/div_total), 13).replace('.', '')
+            row2_part7 = self.complete_str_data(' ', 141, 'rigth')
+
+            row2 = '002' + row2_part1 + row2_part2 + row2_part3 + row2_part4 + row2_part5 + row2_part6 + row2_part7
+            data_line.append(row2)
+
+        data['row2'] = data_line
+
+        if employees_no_accounts:
+            error = 'Los siguientes trabajadores no tienen número de cuenta en el campo bank_account_id:\n%s'
+            raise ValidationError(error % '\n'.join(employees_no_accounts))
+
+        return data
+
+    def get_data_bbva_cts(self, data):
+        company_account = self.payment_type_id.acc_number
+        payslip = self.payslip_ids
+        year, month, day = self.payment_date.strftime('%Y/%m/%d').split('/')
+        if self.future_date and self.type_process == 'F':
+            year, month, day = self.future_date.strftime('%Y/%m/%d').split('/')
+        elif not self.future_date and not self.payment_date:
+            year = '    '
+            month = '  '
+            day = '  '
+
+        data_line = []
+        total_neto = 0.00
+        employees_id = []
+        employees_no_accounts = []
+        type_bank_id = ''
+        acc_number = ''
+        div_total = self.exchange_type if self.exchange_type > 0 else 1
+
+        for rec in payslip:
+            employees_id.append(rec.employee_id)
+            total_neto += rec.net_other
+
+        row1_part1 = '610' if self.exchange_type > 0 else '600'
+        row1_part2 = self.complete_str_data(company_account, 20, 'right')
+        if self.exchange_type > 0:
+            row1_part3 = 'USD'
+        else:
+            row1_part3 = 'PEN'
+        row1_part4 = self.struct_zero_number((total_neto / div_total), 13).replace('.', '')
+        row1_part5 = self.type_process
+        row1_part6 = '%s%s%s' % (year, month, day)
+        row1_part7 = self.run_time if self.type_process == 'H' else ' '
+        row1_part8 = self.complete_str_data('Abono CTS', 25, 'right')
+        row1_part9 = str(len(set(employees_id))).zfill(6)
+        row1_part11 = self.complete_str_data(' ', 70, 'rigth')
+        row1 = row1_part1 + row1_part2 + row1_part3 + row1_part4 + row1_part5 + row1_part6 + row1_part7 + row1_part8 + \
+               row1_part9 + 'N' + row1_part11
+
+        data['row1'] = row1
+
+        for id_emplo in list(set(employees_id)):
+            total_neto_employe = 0.00
+            paylip_employee = self.payslip_ids.filtered(lambda x: x.employee_id == id_emplo)
+            employee = paylip_employee[0].employee_id
+            type_document_employee = employee.type_identification_id
+
+            type_line_ids = paylip_employee[0].line_ids
+            rb_003 = 0
+            for line in type_line_ids:
+                if line.code == 'RB_003':
+                    rb_003 = line.amount
+                    break
+
+            if type_document_employee.l10n_pe_vat_code == '6':
+                type_document = 'R'
+            elif type_document_employee.l10n_pe_vat_code == '1':
+                type_document = 'L'
+            elif type_document_employee.name == 'LE':
+                type_document = 'L'
+            elif type_document_employee.l10n_pe_vat_code == '4':
+                type_document = 'E'
+            elif type_document_employee.l10n_pe_vat_code == '7':
+                type_document = 'P'
+            else:
+                type_document = ' '
+
+            bank_account_id = self.get_bank_id_bbva(employee, self.acc_type)
+            code_03 = bank_account_id.filtered(lambda x: x.bank_id.sunat_bank_code == '11')
+            if code_03:
+                type_bank_id = 'P'
+            else:
+                type_bank_id = 'I'
+
+            acc_number = False
+            if bank_account_id and type_bank_id == 'P':
+                acc_number = bank_account_id.acc_number
+            else:
+                acc_number = bank_account_id.cci
+
+            if not acc_number:
+                employees_no_accounts.append('  - ' + employee.name)
+                continue
+
+            name_complete_employee = employee.firstname + ' ' + employee.lastname + ' ' + employee.secondname
+
+            for rec in paylip_employee:
+                total_neto_employe += rec.net_other
+
+            row2_part2 = type_document
+            row2_part3 = self.complete_str_data(employee.identification_id, 12, 'right')
+            row2_part4 = type_bank_id
+            row2_part5 = self.complete_str_data(acc_number, 20, 'right')
+            row2_part6 = self.complete_str_data(name_complete_employee, 40, 'right')
+            row2_part7 = self.struct_zero_number((total_neto_employe / div_total), 15).replace('.', '')
+            row2_part8 = self.complete_str_data(' ', 141, 'rigth')
+            row2_part9 = self.struct_zero_number(((rb_003 * 4) / div_total), 15).replace('.', '')
+            if self.exchange_type > 0:
+                row2_part10 = 'USD'
+            else:
+                row2_part10 = 'PEN'
+            row2_part11 = self.complete_str_data(' ', 18, 'rigth')
+
+            row2 = '002' + row2_part2 + row2_part3 + row2_part4 + row2_part5 + row2_part6 + row2_part7 + row2_part8 + \
+                   row2_part9 + row2_part10 + row2_part11
+            data_line.append(row2)
+
+        data['row2'] = data_line
+
+        if employees_no_accounts:
+            error = 'Los siguientes trabajadores no tienen número de cuenta en el campo bank_account_id:\n%s'
+            raise ValidationError(error % '\n'.join(employees_no_accounts))
+
+        return data
+
+    def generate_bbva_file(self, data):
+        if self.acc_type == 'wage':
+            data = self.get_data_bbva_wage(data)
+        elif self.acc_type == 'cts':
+            data = self.get_data_bbva_cts(data)
+        return data
 
     @staticmethod
     def get_clean_account(account, type_account):
@@ -592,3 +840,23 @@ class HrMassivePayment(models.Model):
             date_order = date_tz.strftime(format_time)
             date_order = datetime.strptime(date_order, format_time)
         return date_order
+
+    @api.onchange('payment_type_id')
+    def _get_bbva(self):
+        for rec in self:
+            parent_bank_id = rec.payment_type_id.bank_id
+            if parent_bank_id and parent_bank_id.sunat_bank_code == '11':
+                rec.is_bbva = True
+            else:
+                rec.is_bbva = False
+                pass
+
+    def get_bank_id_bbva(self, employee, acc_type):
+        partner_bank_model = self.env['res.partner.bank']
+        domain = [
+            ('partner_id', '=', employee.address_home_id.id),
+            ('acc_type', '=', acc_type),
+            ('currency_id', '!=', False)
+        ]
+        bank_account_id = partner_bank_model.search(domain)
+        return bank_account_id

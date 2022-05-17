@@ -1,4 +1,5 @@
 from odoo import fields, models, api
+from odoo.osv import expression
 
 
 class ModelSunatCatalog(models.AbstractModel):
@@ -70,3 +71,33 @@ class ProductTemplate(models.Model):
         comodel_name='charge.discount.codes',
         string='[53] Códigos de cargos o descuentos'
     )
+
+
+class ClassificationServices(models.Model):
+    _name = 'classification.services'
+    _description = '[30] Clasificación de los bienes y servicios adquiridos'
+
+    code = fields.Char(
+        string='Código',
+        required=True
+    )
+
+    description = fields.Char(
+        string='Descripción',
+        required=True
+    )
+    name = fields.Char(
+        string='Descripción',
+        required=True,
+        related='description'
+    )
+
+    @api.model
+    def _name_search(self, name, args=None, operator='ilike', limit=100, name_get_uid=None):
+        args = args or []
+        domain = []
+        if name:
+            domain = ['|', ('code', '=ilike', name.split(' ')[0] + '%'), ('name', operator, name)]
+            if operator in expression.NEGATIVE_TERM_OPERATORS:
+                domain = ['&', '!'] + domain[1:]
+        return self._search(expression.AND([domain, args]), limit=limit, access_rights_uid=name_get_uid)

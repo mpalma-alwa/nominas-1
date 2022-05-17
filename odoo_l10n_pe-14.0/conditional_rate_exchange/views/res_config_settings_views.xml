@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settingsform_inherit_conditional_rate_exchange" model="ir.ui.view">
+        <field name="name">res.config.settings.form.view.inherit.conditional_rate_exchange</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="currency_rate_live.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div/div/button[@name='update_currency_rates_manually']/parent::div" position="after">
+                <div class="mt8 row">
+                    <label string="NO Sync" for="live_currency_sync" class="col-lg-3 o_light_label"/>
+                    <field name="live_currency_sync"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

@@ -29,6 +29,11 @@
                         <field name="exchange_type"/>
                         <field name="acc_type"/>
                         <field name="is_validate_account"/>
+                        <field name="is_bbva" invisible="1"/>
+                        <field name="type_process" attrs="{'invisible': [('is_bbva','=',False)]}"/>
+                        <field name="future_date" attrs="{'invisible': [('type_process','!=','F')]}"/>
+                        <field name="run_time" attrs="{'invisible': [('type_process','!=','H')]}"/>
+
                         <field name="txt_filename" invisible="1"/>
                         <field name="txt_binary" filename="txt_filename" readonly="1"/>
                         <field name="txt_filename2" invisible="1"/>

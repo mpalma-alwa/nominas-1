@@ -5,7 +5,10 @@ from datetime import datetime
 class CertificateEmployee(models.Model):
     _inherit = 'hr.employee'
 
-    date_today = fields.Char(string='Fecha', compute='_date_today')
+    date_today = fields.Char(
+        string='Fecha', compute='_date_today',
+        groups='hr.group_hr_user'
+    )
 
     def search_employee(self):
         return self.env['hr.employee'].search([('is_employer', '=', True)], limit=1)

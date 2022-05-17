@@ -2,7 +2,7 @@ from odoo import models, fields, api
 
 
 class EpsCredit(models.Model):
-    _name = 'eps.credit'
+    _name = "eps.credit"
 
     since = fields.Date(string='Desde', required='Tuue')
     until = fields.Date(string='Hasta', required='Tuue')
